@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dev.to Comment Reviser</title>
+<style>
+  :root {
+    --bg: #f5f7fa; --card: #ffffff; --ink: #1a2533; --muted: #64748b;
+    --accent: #2563eb; --accent-ink: #ffffff; --line: #e3e8ee;
+    --ok: #16a34a; --err: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px; line-height: 1.55;
+  }
+  header {
+    background: var(--card); border-bottom: 1px solid var(--line);
+    padding: 16px 24px; display: flex; justify-content: space-between; align-items: baseline;
+  }
+  header h1 { margin: 0; font-size: 19px; }
+  header .docs-link { color: var(--muted); font-size: 13px; text-decoration: none; }
+  header .docs-link:hover { color: var(--accent); }
+  main { max-width: 1080px; margin: 0 auto; padding: 20px 24px 40px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 800px) { .cols { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; padding: 16px;
+  }
+  .card h2 { margin: 0 0 10px; font-size: 15px; color: var(--muted); font-weight: 600; }
+  textarea {
+    width: 100%; min-height: 220px; resize: vertical;
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px; font: inherit; color: inherit; background: #fbfcfe;
+  }
+  textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  button.primary {
+    margin-top: 10px; background: var(--accent); color: var(--accent-ink);
+    border: none; border-radius: 8px; padding: 9px 18px;
+    font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button.primary:disabled { opacity: 0.55; cursor: wait; }
+  button.ghost {
+    background: transparent; border: 1px solid var(--line); color: var(--muted);
+    border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer;
+  }
+  button.ghost:hover { color: var(--accent); border-color: var(--accent); }
+  #status { margin-top: 8px; font-size: 13px; color: var(--muted); min-height: 1.2em; }
+  #status.error { color: var(--err); }
+  .panel-head { display: flex; justify-content: space-between; align-items: center; }
+  pre.output {
+    margin: 8px 0 0; white-space: pre-wrap; word-break: break-word;
+    background: #fbfcfe; border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px; min-height: 60px; font-family: ui-monospace, Consolas, monospace;
+    font-size: 13px;
+  }
+  .history-card { margin-top: 16px; }
+  #historyList { list-style: none; margin: 8px 0 0; padding: 0; }
+  #historyList li {
+    padding: 8px 10px; border-top: 1px solid var(--line); cursor: pointer;
+    color: var(--muted); font-size: 13px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  #historyList li:first-child { border-top: none; }
+  #historyList li:hover { background: #f0f4fa; color: var(--ink); }
+  .empty { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  .copy-ok { color: var(--ok) !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Dev.to Comment Reviser</h1>
+  <a class="docs-link" href="/docs" target="_blank">API docs (/docs)</a>
+</header>
+
+<main>
+  <div class="cols">
+    <section class="card">
+      <h2>Your comment (markdown welcome)</h2>
+      <textarea id="input" placeholder="Paste your dev.to comment here..."></textarea>
+      <button class="primary" id="reviseBtn" onclick="revise()">Revise</button>
+      <div id="status"></div>
+    </section>
+
+    <section class="card">
+      <div class="panel-head">
+        <h2>Revised text</h2>
+        <button class="ghost" id="copyBtn" onclick="copyRevised()">Copy</button>
+      </div>
+      <pre class="output" id="revised">—</pre>
+      <h2 style="margin-top:14px">Paragraph explanations</h2>
+      <pre class="output" id="explanations">—</pre>
+    </section>
+  </div>
+
+  <section class="card history-card">
+    <h2>History (latest 10, click to load)</h2>
+    <ul id="historyList"></ul>
+    <div class="empty" id="historyEmpty" hidden>No submissions yet.</div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function flash(msg, isError = false) {
+  const el = $("status");
+  el.textContent = msg;
+  el.classList.toggle("error", isError);
+}
+
+async function revise() {
+  const text = $("input").value.trim();
+  if (!text) { flash("Please enter a comment first.", true); return; }
+  const btn = $("reviseBtn");
+  btn.disabled = true;
+  flash("Revising…");
+  try {
+    const res = await fetch("/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const data = await res.json();
+    if (!res.ok) { flash(data.detail || "Request failed.", true); return; }
+    $("revised").textContent = data.revised;
+    $("explanations").textContent = data.explanations;
+    flash("Done — saved as #" + data.id + ".");
+    loadHistory();
+  } catch (e) {
+    flash("Network error: " + e, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function copyRevised() {
+  const text = $("revised").textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    const btn = $("copyBtn");
+    btn.textContent = "Copied ✓";
+    btn.classList.add("copy-ok");
+    setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("copy-ok"); }, 1500);
+  } catch (e) {
+    flash("Copy failed: " + e, true);
+  }
+}
+
+async function loadHistory() {
+  const res = await fetch("/history");
+  const data = await res.json();
+  const list = $("historyList");
+  list.innerHTML = "";
+  $("historyEmpty").hidden = data.items.length > 0;
+  for (const it of data.items) {
+    const li = document.createElement("li");
+    const preview = it.original.slice(0, 70).replace(/\s+/g, " ");
+    li.textContent = "#" + it.id + " · " + it.created_at + " · " + preview
+      + (it.original.length > 70 ? "…" : "");
+    li.onclick = () => showItem(it.id);
+    list.appendChild(li);
+  }
+}
+
+async function showItem(id) {
+  const res = await fetch("/history/" + id);
+  if (!res.ok) { flash("Could not load #" + id, true); return; }
+  const it = await res.json();
+  $("input").value = it.original;
+  $("revised").textContent = it.revised;
+  $("explanations").textContent = it.explanation;
+  flash("Loaded #" + it.id + " from history.");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+loadHistory();
+</script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+# --- secrets (NEVER commit) ---
+.env
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# --- virtual environments ---
+.venv/
+venv/
+
+# --- runtime app data (contains your submissions; recreated on first run) ---
+history.db
+history.db-journal
+history.db-wal
+history.db-shm
+
+# --- editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
